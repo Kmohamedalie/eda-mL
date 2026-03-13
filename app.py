@@ -22,7 +22,7 @@ def load_data(file):
         return pd.read_csv(file)
     else:
         # Default to Gapminder if no file is uploaded
-        return pd.read_csv('Gapminder.csv')
+        return pd.read_csv(file)
 
 df = load_data(uploaded_file)
 
@@ -100,3 +100,4 @@ if categorical_cols:
     filtered_df = df[df[filter_col].isin(selected_vals)]
     st.subheader(f"Filtered Data (by {filter_col})")
     st.write(filtered_df)
+
