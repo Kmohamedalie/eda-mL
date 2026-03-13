@@ -29,6 +29,10 @@ st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
 st.title("📊 Universal EDA & Machine Learning App")
 st.markdown("Upload any CSV or Excel file to begin your analysis and train models.")
 
+# Initialize session state for ML results
+if 'ml_run' not in st.session_state:
+    st.session_state.ml_run = False
+
 # 1. File Uploader
 uploaded_file = st.file_uploader("Choose a file", type=['csv', 'xlsx'])
 
@@ -38,8 +42,6 @@ if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
-        
-        st.success("File uploaded successfully!")
         
         st.sidebar.header("Settings")
         show_raw_data = st.sidebar.checkbox("Show Raw Data", False)
@@ -85,14 +87,6 @@ if uploaded_file is not None:
                 
                 st.plotly_chart(fig, use_container_width=True)
 
-            st.header("Missing Values")
-            null_counts = df.isnull().sum()
-            if null_counts.sum() > 0:
-                st.warning(f"Found {null_counts.sum()} missing values.")
-                st.bar_chart(null_counts[null_counts > 0])
-            else:
-                st.info("No missing values detected!")
-
         # ==========================================
         # TAB 2: TEXT & SENTIMENT ANALYSIS
         # ==========================================
@@ -129,7 +123,7 @@ if uploaded_file is not None:
                         st.plotly_chart(fig_words, use_container_width=True)
 
         # ==========================================
-        # TAB 3: MODEL COMPARISON (UPDATED METRICS)
+        # TAB 3: MODEL COMPARISON (SESSION STATE ADDED)
         # ==========================================
         with tab_ml:
             st.header("🏆 Machine Learning Bake-off")
@@ -152,7 +146,7 @@ if uploaded_file is not None:
                     "Logistic Regression": LogisticRegression(max_iter=1000),
                     "Random Forest": RandomForestClassifier(random_state=42),
                     "Gradient Boosting": GradientBoostingClassifier(random_state=42),
-                    "Support Vector Machine (SVC)": SVC(probability=True), # Added probability=True for ROC Curve
+                    "Support Vector Machine (SVC)": SVC(probability=True), 
                     "K-Nearest Neighbors": KNeighborsClassifier()
                 }
 
@@ -178,6 +172,7 @@ if uploaded_file is not None:
                     with col_models:
                         selected_model_names = st.multiselect("Select Models to Compare", list(available_models.keys()), default=list(available_models.keys())[:2])
                         
+                    # 1. BUTTON CLICK: ONLY TRAIN AND SAVE TO MEMORY
                     if st.button("Run Model Bake-off"):
                         if not selected_model_names:
                             st.error("Please select at least one model to train.")
@@ -189,7 +184,6 @@ if uploaded_file is not None:
                             else:
                                 X = ml_data[features]
                                 
-                                # Encode target variable for classification to ensure metrics work smoothly
                                 if not is_regression:
                                     le = LabelEncoder()
                                     y = le.fit_transform(ml_data[target_var])
@@ -201,7 +195,7 @@ if uploaded_file is not None:
                                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
                                 
                                 results = []
-                                trained_models = {} # Dictionary to store trained models for later use
+                                trained_models = {} 
                                 
                                 with st.spinner("Training models and calculating advanced metrics..."):
                                     for name in selected_model_names:
@@ -222,84 +216,95 @@ if uploaded_file is not None:
                                             f1 = f1_score(y_test, preds, average='weighted', zero_division=0)
                                             results.append({"Model": name, "Accuracy": acc, "Precision": prec, "Recall": rec, "F1-Score": f1})
                                 
-                                st.success("Bake-off complete!")
-                                
-                                # Display Results Leaderboard
-                                st.subheader("🏆 Model Leaderboard")
-                                results_df = pd.DataFrame(results)
-                                
-                                if is_regression:
-                                    results_df = results_df.sort_values(by="R² Score", ascending=False)
-                                    st.dataframe(results_df.style.highlight_max(subset=['R² Score'], color='lightgreen'))
-                                    
-                                    df_melted = results_df.melt(id_vars="Model", value_vars=["R² Score"], var_name="Metric", value_name="Score")
-                                    fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="R² Score Comparison (Higher is Better)")
-                                    st.plotly_chart(fig_comp, use_container_width=True)
+                                # Save everything to session state
+                                st.session_state.results = results
+                                st.session_state.trained_models = trained_models
+                                st.session_state.X_test = X_test
+                                st.session_state.y_test = y_test
+                                st.session_state.features = features
+                                st.session_state.is_regression_run = is_regression
+                                st.session_state.is_binary_run = is_binary
+                                st.session_state.selected_model_names_run = selected_model_names
+                                st.session_state.ml_run = True # Flag that training is complete
+
+                    # 2. DISPLAY LOGIC: READ FROM MEMORY
+                    if st.session_state.ml_run:
+                        st.success("Bake-off complete!")
+                        
+                        st.subheader("🏆 Model Leaderboard")
+                        results_df = pd.DataFrame(st.session_state.results)
+                        
+                        if st.session_state.is_regression_run:
+                            results_df = results_df.sort_values(by="R² Score", ascending=False)
+                            st.dataframe(results_df.style.highlight_max(subset=['R² Score'], color='lightgreen'))
+                            
+                            df_melted = results_df.melt(id_vars="Model", value_vars=["R² Score"], var_name="Metric", value_name="Score")
+                            fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="R² Score Comparison (Higher is Better)")
+                            st.plotly_chart(fig_comp, use_container_width=True)
+                        else:
+                            results_df = results_df.sort_values(by="F1-Score", ascending=False)
+                            st.dataframe(results_df.style.highlight_max(subset=['Accuracy', 'Precision', 'Recall', 'F1-Score'], color='lightgreen'))
+                            
+                            df_melted = results_df.melt(id_vars="Model", value_vars=["Accuracy", "Precision", "Recall", "F1-Score"], var_name="Metric", value_name="Score")
+                            fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="Comprehensive Metric Comparison (Higher is Better)")
+                            st.plotly_chart(fig_comp, use_container_width=True)
+                        
+                        st.markdown("---")
+                        st.header("🔬 Deep Dive: Model Diagnostics")
+                        
+                        col_diag1, col_diag2 = st.columns(2)
+                        
+                        with col_diag1:
+                            st.subheader("Feature Importance")
+                            # Interacting with this dropdown now works perfectly because we render from st.session_state!
+                            model_to_explain = st.selectbox("Select a model to view feature importance:", st.session_state.selected_model_names_run)
+                            selected_model = st.session_state.trained_models[model_to_explain]
+                            
+                            importances = None
+                            if hasattr(selected_model, 'feature_importances_'):
+                                importances = selected_model.feature_importances_
+                            elif hasattr(selected_model, 'coef_'):
+                                if len(selected_model.coef_.shape) > 1 and selected_model.coef_.shape[0] > 1:
+                                    importances = np.mean(np.abs(selected_model.coef_), axis=0)
                                 else:
-                                    results_df = results_df.sort_values(by="F1-Score", ascending=False)
-                                    st.dataframe(results_df.style.highlight_max(subset=['Accuracy', 'Precision', 'Recall', 'F1-Score'], color='lightgreen'))
+                                    importances = np.abs(selected_model.coef_[0]) if len(selected_model.coef_.shape) > 1 else np.abs(selected_model.coef_)
                                     
-                                    df_melted = results_df.melt(id_vars="Model", value_vars=["Accuracy", "Precision", "Recall", "F1-Score"], var_name="Metric", value_name="Score")
-                                    fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="Comprehensive Metric Comparison (Higher is Better)")
-                                    st.plotly_chart(fig_comp, use_container_width=True)
-                                
-                                # ==========================================
-                                # DEEP DIVE: ROC-AUC & FEATURE IMPORTANCE
-                                # ==========================================
-                                st.markdown("---")
-                                st.header("🔬 Deep Dive: Model Diagnostics")
-                                
-                                col_diag1, col_diag2 = st.columns(2)
-                                
-                                with col_diag1:
-                                    st.subheader("Feature Importance")
-                                    model_to_explain = st.selectbox("Select a model to view feature importance:", selected_model_names)
-                                    selected_model = trained_models[model_to_explain]
-                                    
-                                    importances = None
-                                    if hasattr(selected_model, 'feature_importances_'):
-                                        importances = selected_model.feature_importances_
-                                    elif hasattr(selected_model, 'coef_'):
-                                        # Handle multi-class logistic regression vs binary/regression
-                                        if len(selected_model.coef_.shape) > 1 and selected_model.coef_.shape[0] > 1:
-                                            importances = np.mean(np.abs(selected_model.coef_), axis=0)
-                                        else:
-                                            importances = np.abs(selected_model.coef_[0]) if len(selected_model.coef_.shape) > 1 else np.abs(selected_model.coef_)
-                                            
-                                    if importances is not None:
-                                        fi_df = pd.DataFrame({'Feature': features, 'Importance': importances})
-                                        fi_df = fi_df.sort_values(by='Importance', ascending=True)
-                                        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h',title=f"Feature Importance ({model_to_explain})",color='Importance', color_continuous_scale='viridis')
-                                        st.plotly_chart(fig_fi, use_container_width=True)
-                                    else:
-                                        st.info(f"Feature importance is not natively supported for {model_to_explain} (e.g., standard KNN or SVR).")
+                            if importances is not None:
+                                fi_df = pd.DataFrame({'Feature': st.session_state.features, 'Importance': importances})
+                                fi_df = fi_df.sort_values(by='Importance', ascending=True)
+                                fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h', 
+                                                title=f"Feature Importance ({model_to_explain})",
+                                                color='Importance', color_continuous_scale='viridis')
+                                st.plotly_chart(fig_fi, use_container_width=True)
+                            else:
+                                st.info(f"Feature importance is not natively supported for {model_to_explain} (e.g., standard KNN or SVR).")
 
-                                with col_diag2:
-                                    if not is_regression and is_binary:
-                                        st.subheader("ROC-AUC Curve")
-                                        fig_roc = go.Figure()
-                                        fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
+                        with col_diag2:
+                            if not st.session_state.is_regression_run and st.session_state.is_binary_run:
+                                st.subheader("ROC-AUC Curve")
+                                fig_roc = go.Figure()
+                                fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
 
-                                        for name in selected_model_names:
-                                            model = trained_models[name]
-                                            if hasattr(model, "predict_proba"):
-                                                y_pred_proba = model.predict_proba(X_test)[:, 1]
-                                                fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
-                                                roc_auc = auc(fpr, tpr)
-                                                fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'{name} (AUC = {roc_auc:.3f})'))
+                                for name in st.session_state.selected_model_names_run:
+                                    model = st.session_state.trained_models[name]
+                                    if hasattr(model, "predict_proba"):
+                                        y_pred_proba = model.predict_proba(st.session_state.X_test)[:, 1]
+                                        fpr, tpr, _ = roc_curve(st.session_state.y_test, y_pred_proba)
+                                        roc_auc = auc(fpr, tpr)
+                                        fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'{name} (AUC = {roc_auc:.3f})'))
 
-                                        fig_roc.update_layout(
-                                            xaxis_title='False Positive Rate', 
-                                            yaxis_title='True Positive Rate',
-                                            legend=dict(x=0.6, y=0.1),
-                                            template="plotly_white",
-                                            margin=dict(l=20, r=20, t=40, b=20)
-                                        )
-                                        st.plotly_chart(fig_roc, use_container_width=True)
-                                    elif not is_regression and not is_binary:
-                                        st.info("ROC-AUC curve is currently only generated for binary (2-class) classification tasks in this app.")
-                                    else:
-                                        st.info("ROC-AUC is not applicable for Regression tasks.")
+                                fig_roc.update_layout(
+                                    xaxis_title='False Positive Rate', 
+                                    yaxis_title='True Positive Rate',
+                                    legend=dict(x=0.6, y=0.1),
+                                    template="plotly_white",
+                                    margin=dict(l=20, r=20, t=40, b=20)
+                                )
+                                st.plotly_chart(fig_roc, use_container_width=True)
+                            elif not st.session_state.is_regression_run and not st.session_state.is_binary_run:
+                                st.info("ROC-AUC curve is currently only generated for binary (2-class) classification tasks in this app.")
+                            else:
+                                st.info("ROC-AUC is not applicable for Regression tasks.")
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
