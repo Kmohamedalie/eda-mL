@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # Set page config
 st.set_page_config(page_title="Universal EDA Tool", layout="wide")
 
-st.title("📊 Universal Exploratory Data Analysis Tool")
+st.title("🔎 Exploratory Data Analysis Tool")
 st.markdown("""
 Upload any CSV dataset to perform an instant exploratory analysis. 
 If no file is uploaded, the **Gapminder** dataset will be used by default.
@@ -100,4 +100,5 @@ if categorical_cols:
     filtered_df = df[df[filter_col].isin(selected_vals)]
     st.subheader(f"Filtered Data (by {filter_col})")
     st.write(filtered_df)
+
 
