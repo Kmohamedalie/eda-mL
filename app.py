@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 from textblob import TextBlob
 from collections import Counter
 import re
+import pickle # Added for model exporting
+
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
@@ -352,6 +354,59 @@ if uploaded_file is not None:
                                 st.info("ROC-AUC curve is currently only generated for binary (2-class) classification tasks in this app.")
                             else:
                                 st.info("ROC-AUC is not applicable for Regression tasks.")
+
+                        # ==========================================
+                        # EXPORT / DOWNLOAD BEST MODEL
+                        # ==========================================
+                        st.markdown("---")
+                        st.header("💾 Save Best Model")
+                        
+                        # Identify best model based on primary metric from the sorted results dataframe
+                        best_model_name = results_df.iloc[0]['Model']
+                        primary_metric = "R² Score" if st.session_state.is_regression_run else "F1-Score"
+                        best_score = results_df.iloc[0][primary_metric]
+                        
+                        st.success(f"**Best Model Identified:** {best_model_name} (with {primary_metric}: {best_score:.4f})")
+                        st.markdown("Download the best performing model as a `.pkl` file to use it in your own Python scripts or production environments.")
+                        
+                        col_export1, col_export2 = st.columns([1, 2])
+                        
+                        with col_export1:
+                            # Default the dropdown to the best model identified above
+                            try:
+                                best_index = st.session_state.selected_model_names_run.index(best_model_name)
+                            except ValueError:
+                                best_index = 0
+
+                            model_to_download = st.selectbox(
+                                "Select a model to export (Defaults to Best Model):", 
+                                st.session_state.selected_model_names_run,
+                                index=best_index,
+                                key="export_select"
+                            )
+                            
+                            model_obj = st.session_state.trained_models[model_to_download]
+                            model_bytes = pickle.dumps(model_obj)
+                            safe_filename = f"{model_to_download.replace(' ', '_').lower()}_model.pkl"
+                            
+                            st.download_button(
+                                label=f"⬇️ Download {model_to_download}.pkl",
+                                data=model_bytes,
+                                file_name=safe_filename,
+                                mime="application/octet-stream"
+                            )
+                            
+                        with col_export2:
+                            st.info(f"**How to use your downloaded model locally:**\n\n"
+                                    f"```python\n"
+                                    f"import pickle\n"
+                                    f"import pandas as pd\n\n"
+                                    f"# 1. Load the model\n"
+                                    f"with open('{safe_filename}', 'rb') as f:\n"
+                                    f"    model = pickle.load(f)\n\n"
+                                    f"# 2. Make predictions on new data\n"
+                                    f"predictions = model.predict(new_data)\n"
+                                    f"```")
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
