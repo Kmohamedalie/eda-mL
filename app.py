@@ -3,100 +3,117 @@ import pandas as pd
 import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
+import os
 
-# Set page config
-st.set_page_config(page_title="Universal EDA Tool", layout="wide")
+# --- Page Configuration ---
+st.set_page_config(page_title="Universal EDA Explorer", layout="wide", page_icon="📊")
+
+# Custom CSS to improve UI
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stMetric {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0px 2px 10px rgba(0,0,0,0.05);
+    }
+    </style>
+    """, unsafe_allow_stdio=True)
 
 st.title("📊 Universal Exploratory Data Analysis Tool")
-st.markdown("""
-Upload any CSV dataset to perform an instant exploratory analysis. 
-If no file is uploaded, the **Gapminder** dataset will be used by default.
-""")
+st.markdown("Upload any CSV to begin. If no file is uploaded, the app will attempt to load the default **Gapminder** dataset.")
 
-# --- 1. File Upload Logic ---
+# --- Sidebar: File Upload ---
+st.sidebar.header("Data Settings")
 uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
 @st.cache_data
 def load_data(file):
-    if file is not None:
-        return pd.read_csv(file)
-    else:
-        # Default to Gapminder if no file is uploaded
-        return pd.read_csv('Gapminder.csv')
+    """Safely loads data from upload or local fallback."""
+    try:
+        if file is not None:
+            return pd.read_csv(file)
+        elif os.path.exists('Gapminder.csv'):
+            return pd.read_csv('Gapminder.csv')
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
+        return None
 
 df = load_data(uploaded_file)
 
-# --- 2. Data Overview Section ---
-st.header("🔍 Data Overview")
-col1, col2, col3 = st.columns(3)
-col1.metric("Rows", df.shape[0])
-col2.metric("Columns", df.shape[1])
-col3.metric("Missing Values", df.isna().sum().sum())
+# --- Handling Missing Data / Initial State ---
+if df is None:
+    st.info("👋 **Welcome!** Please upload a CSV file in the sidebar to start your analysis.")
+    st.image("https://streamlit.io/images/brand/streamlit-mark-color.png", width=100)
+    st.stop()  # Prevents the rest of the app from running and showing errors
 
-if st.checkbox("Show Raw Data"):
-    st.dataframe(df.head(50))
+# --- Data Cleaning (Removing index columns if they exist) ---
+if 'Unnamed: 0' in df.columns:
+    df = df.drop(columns=['Unnamed: 0'])
 
-# --- 3. Statistics Section ---
-st.header("📈 Summary Statistics")
-st.write(df.describe())
+# --- 1. Key Metrics Dashboard ---
+st.header("🔍 Quick Summary")
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Total Rows", df.shape[0])
+m2.metric("Total Columns", df.shape[1])
+m3.metric("Numeric Features", len(df.select_dtypes(include=['number']).columns))
+m4.metric("Missing Values", df.isna().sum().sum())
 
-# --- 4. Interactive Visualizations ---
-st.header("🎨 Interactive Visualizations")
+# --- 2. Data Preview ---
+with st.expander("👀 View Raw Dataframe"):
+    st.dataframe(df, use_container_width=True)
 
-viz_type = st.selectbox("Select Chart Type", 
-                        ["Scatter Plot", "Line Chart", "Bar Chart", "Box Plot", "Histogram", "Correlation Heatmap"])
+# --- 3. Statistical Analysis ---
+st.header("📈 Statistical Insights")
+tab1, tab2 = st.tabs(["Summary Statistics", "Correlation Heatmap"])
 
-# Get numerical and categorical columns for selectors
-numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-all_cols = df.columns.tolist()
+with tab1:
+    st.write(df.describe())
 
-if viz_type == "Scatter Plot":
-    col_x = st.selectbox("X Axis", numeric_cols)
-    col_y = st.selectbox("Y Axis", numeric_cols)
-    color_col = st.selectbox("Color By (Optional)", [None] + categorical_cols)
-    fig = px.scatter(df, x=col_x, y=col_y, color=color_col, title=f"{col_y} vs {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Line Chart":
-    col_x = st.selectbox("X Axis (Usually Time)", all_cols)
-    col_y = st.selectbox("Y Axis", numeric_cols)
-    group_col = st.selectbox("Group By", [None] + categorical_cols)
-    fig = px.line(df, x=col_x, y=col_y, color=group_col, title=f"{col_y} over {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Bar Chart":
-    col_x = st.selectbox("X Axis (Category)", categorical_cols)
-    col_y = st.selectbox("Y Axis (Value)", numeric_cols)
-    fig = px.bar(df, x=col_x, y=col_y, title=f"{col_y} by {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Box Plot":
-    col_x = st.selectbox("Category", categorical_cols)
-    col_y = st.selectbox("Numerical Value", numeric_cols)
-    fig = px.box(df, x=col_x, y=col_y, title=f"Distribution of {col_y} by {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Histogram":
-    col_x = st.selectbox("Select Column", numeric_cols)
-    fig = px.histogram(df, x=col_x, nbins=30, title=f"Frequency Distribution of {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Correlation Heatmap":
-    if len(numeric_cols) > 1:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+with tab2:
+    numeric_df = df.select_dtypes(include=['number'])
+    if not numeric_df.empty:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.heatmap(numeric_df.corr(), annot=True, cmap="mako", fmt=".2f", ax=ax)
         st.pyplot(fig)
     else:
-        st.warning("Not enough numerical columns for a correlation heatmap.")
+        st.write("No numerical columns found for correlation.")
 
-# --- 5. Data Filtering ---
-st.sidebar.header("Filter Data")
-if categorical_cols:
-    filter_col = st.sidebar.selectbox("Filter by Category", categorical_cols)
-    unique_vals = df[filter_col].unique().tolist()
-    selected_vals = st.sidebar.multiselect(f"Select {filter_col}", unique_vals, default=unique_vals[:2])
+# --- 4. Interactive Visualization Builder ---
+st.header("🎨 Interactive Visual Builder")
+
+col_a, col_b = st.columns([1, 3])
+
+with col_a:
+    viz_type = st.selectbox("Select Chart Type", 
+                            ["Scatter Plot", "Bar Chart", "Line Chart", "Box Plot", "Histogram"])
     
-    filtered_df = df[df[filter_col].isin(selected_vals)]
-    st.subheader(f"Filtered Data (by {filter_col})")
-    st.write(filtered_df)
+    all_cols = df.columns.tolist()
+    num_cols = df.select_dtypes(include=['number']).columns.tolist()
+    cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    x_axis = st.selectbox("X Axis", all_cols)
+    y_axis = st.selectbox("Y Axis", num_cols)
+    color_by = st.selectbox("Color/Group By (Optional)", [None] + cat_cols)
+
+with col_b:
+    if viz_type == "Scatter Plot":
+        fig = px.scatter(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+    elif viz_type == "Bar Chart":
+        fig = px.bar(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+    elif viz_type == "Line Chart":
+        fig = px.line(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+    elif viz_type == "Box Plot":
+        fig = px.box(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+    else:
+        fig = px.histogram(df, x=x_axis, template="plotly_white")
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+st.sidebar.markdown("---")
+st.sidebar.write("Created with Streamlit 🚀")
