@@ -11,14 +11,14 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 
 # Classification imports
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 # Page configuration
 st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
@@ -126,7 +126,7 @@ if uploaded_file is not None:
                         st.plotly_chart(fig_words, use_container_width=True)
 
         # ==========================================
-        # TAB 3: MODEL COMPARISON (UPDATED)
+        # TAB 3: MODEL COMPARISON (UPDATED METRICS)
         # ==========================================
         with tab_ml:
             st.header("🏆 Machine Learning Bake-off")
@@ -191,8 +191,7 @@ if uploaded_file is not None:
                                 
                                 results = []
                                 
-                                # Loop through and train every selected model
-                                with st.spinner("Training models and comparing results..."):
+                                with st.spinner("Training models and calculating advanced metrics..."):
                                     for name in selected_model_names:
                                         model = available_models[name]
                                         model.fit(X_train, y_train)
@@ -201,10 +200,15 @@ if uploaded_file is not None:
                                         if is_regression:
                                             r2 = r2_score(y_test, preds)
                                             mse = mean_squared_error(y_test, preds)
-                                            results.append({"Model": name, "R² Score": r2, "MSE": mse})
+                                            mae = mean_absolute_error(y_test, preds)
+                                            results.append({"Model": name, "R² Score": r2, "MSE": mse, "MAE": mae})
                                         else:
+                                            # Using average='weighted' safely handles both binary and multi-class target variables
                                             acc = accuracy_score(y_test, preds)
-                                            results.append({"Model": name, "Accuracy": acc})
+                                            prec = precision_score(y_test, preds, average='weighted', zero_division=0)
+                                            rec = recall_score(y_test, preds, average='weighted', zero_division=0)
+                                            f1 = f1_score(y_test, preds, average='weighted', zero_division=0)
+                                            results.append({"Model": name, "Accuracy": acc, "Precision": prec, "Recall": rec, "F1-Score": f1})
                                 
                                 st.success("Bake-off complete!")
                                 
@@ -216,15 +220,18 @@ if uploaded_file is not None:
                                     results_df = results_df.sort_values(by="R² Score", ascending=False)
                                     st.dataframe(results_df.style.highlight_max(subset=['R² Score'], color='lightgreen'))
                                     
-                                    # Plot Comparison
-                                    fig_comp = px.bar(results_df, x="Model", y="R² Score", color="Model", title="Model Comparison (R² Score - Higher is Better)")
+                                    # Plot Comparison using a grouped bar chart
+                                    df_melted = results_df.melt(id_vars="Model", value_vars=["R² Score"], var_name="Metric", value_name="Score")
+                                    fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="R² Score Comparison (Higher is Better)")
                                     st.plotly_chart(fig_comp, use_container_width=True)
                                 else:
-                                    results_df = results_df.sort_values(by="Accuracy", ascending=False)
-                                    st.dataframe(results_df.style.highlight_max(subset=['Accuracy'], color='lightgreen'))
+                                    results_df = results_df.sort_values(by="F1-Score", ascending=False)
+                                    # Highlight the max values across the primary metrics
+                                    st.dataframe(results_df.style.highlight_max(subset=['Accuracy', 'Precision', 'Recall', 'F1-Score'], color='lightgreen'))
                                     
-                                    # Plot Comparison
-                                    fig_comp = px.bar(results_df, x="Model", y="Accuracy", color="Model", title="Model Comparison (Accuracy - Higher is Better)")
+                                    # Plot Comparison using a grouped bar chart for all 4 metrics
+                                    df_melted = results_df.melt(id_vars="Model", value_vars=["Accuracy", "Precision", "Recall", "F1-Score"], var_name="Metric", value_name="Score")
+                                    fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="Comprehensive Metric Comparison (Higher is Better)")
                                     st.plotly_chart(fig_comp, use_container_width=True)
 
     except Exception as e:
