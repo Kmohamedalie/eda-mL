@@ -269,4 +269,39 @@ if uploaded_file is not None:
                                     if importances is not None:
                                         fi_df = pd.DataFrame({'Feature': features, 'Importance': importances})
                                         fi_df = fi_df.sort_values(by='Importance', ascending=True)
-                                        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h',
+                                        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h',title=f"Feature Importance ({model_to_explain})",color='Importance', color_continuous_scale='viridis')
+                                        st.plotly_chart(fig_fi, use_container_width=True)
+                                    else:
+                                        st.info(f"Feature importance is not natively supported for {model_to_explain} (e.g., standard KNN or SVR).")
+
+                                with col_diag2:
+                                    if not is_regression and is_binary:
+                                        st.subheader("ROC-AUC Curve")
+                                        fig_roc = go.Figure()
+                                        fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
+
+                                        for name in selected_model_names:
+                                            model = trained_models[name]
+                                            if hasattr(model, "predict_proba"):
+                                                y_pred_proba = model.predict_proba(X_test)[:, 1]
+                                                fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+                                                roc_auc = auc(fpr, tpr)
+                                                fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'{name} (AUC = {roc_auc:.3f})'))
+
+                                        fig_roc.update_layout(
+                                            xaxis_title='False Positive Rate', 
+                                            yaxis_title='True Positive Rate',
+                                            legend=dict(x=0.6, y=0.1),
+                                            template="plotly_white",
+                                            margin=dict(l=20, r=20, t=40, b=20)
+                                        )
+                                        st.plotly_chart(fig_roc, use_container_width=True)
+                                    elif not is_regression and not is_binary:
+                                        st.info("ROC-AUC curve is currently only generated for binary (2-class) classification tasks in this app.")
+                                    else:
+                                        st.info("ROC-AUC is not applicable for Regression tasks.")
+
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
+else:
+    st.info("Waiting for a dataset to be uploaded...")
