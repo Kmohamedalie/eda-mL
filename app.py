@@ -8,12 +8,16 @@ from sklearn.model_selection import train_test_split
 
 # Regression imports
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
-# Classification imports (NEW)
+# Classification imports
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 # Page configuration
@@ -37,7 +41,7 @@ if uploaded_file is not None:
         st.sidebar.header("Settings")
         show_raw_data = st.sidebar.checkbox("Show Raw Data", False)
         
-        tab_general, tab_text, tab_ml = st.tabs(["📊 General EDA", "📝 Text & Sentiment", "🤖 Machine Learning"])
+        tab_general, tab_text, tab_ml = st.tabs(["📊 General EDA", "📝 Text & Sentiment", "🏆 Model Comparison (ML)"])
         
         # ==========================================
         # TAB 1: GENERAL EDA
@@ -122,21 +126,32 @@ if uploaded_file is not None:
                         st.plotly_chart(fig_words, use_container_width=True)
 
         # ==========================================
-        # TAB 3: MACHINE LEARNING (UPDATED)
+        # TAB 3: MODEL COMPARISON (UPDATED)
         # ==========================================
         with tab_ml:
-            st.header("🤖 Machine Learning Model Training")
+            st.header("🏆 Machine Learning Bake-off")
             
-            # 1. Choose Task Type
             task_type = st.radio("Select ML Task Type", ["Regression (Predict a Number)", "Classification (Predict a Category)"], horizontal=True)
             is_regression = "Regression" in task_type
             
-            # 2. Filter target columns based on task
             if is_regression:
                 target_options = df.select_dtypes(include=['number']).columns.tolist()
+                available_models = {
+                    "Linear Regression": LinearRegression(),
+                    "Random Forest": RandomForestRegressor(random_state=42),
+                    "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+                    "Support Vector Machine (SVR)": SVR(),
+                    "K-Nearest Neighbors": KNeighborsRegressor()
+                }
             else:
-                # Classification targets can be text or numbers
                 target_options = df.columns.tolist() 
+                available_models = {
+                    "Logistic Regression": LogisticRegression(max_iter=1000),
+                    "Random Forest": RandomForestClassifier(random_state=42),
+                    "Gradient Boosting": GradientBoostingClassifier(random_state=42),
+                    "Support Vector Machine (SVC)": SVC(),
+                    "K-Nearest Neighbors": KNeighborsClassifier()
+                }
 
             numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
             
@@ -146,81 +161,71 @@ if uploaded_file is not None:
                 col_x, col_y = st.columns(2)
                 
                 with col_y:
-                    target_var = st.selectbox("Select Target Variable (Y - What you want to predict)", target_options)
+                    target_var = st.selectbox("Select Target Variable (Y)", target_options)
                 with col_x:
                     feature_options = [c for c in numeric_cols if c != target_var]
-                    features = st.multiselect("Select Feature Variables (X - Numeric only)", feature_options, default=feature_options)
+                    features = st.multiselect("Select Feature Variables (X)", feature_options, default=feature_options)
                 
                 if not features:
                     st.warning("Please select at least one feature variable.")
                 else:
-                    col_settings, col_model = st.columns(2)
+                    col_settings, col_models = st.columns(2)
                     with col_settings:
                         test_size = st.slider("Test Set Size (%)", 10, 50, 20) / 100
-                    with col_model:
-                        if is_regression:
-                            model_type = st.selectbox("Select Algorithm", ["Linear Regression", "Random Forest Regressor"])
-                        else:
-                            model_type = st.selectbox("Select Algorithm", ["Logistic Regression", "Random Forest Classifier"])
+                    with col_models:
+                        selected_model_names = st.multiselect("Select Models to Compare", list(available_models.keys()), default=list(available_models.keys())[:2])
                         
-                    if st.button("Train Model"):
-                        ml_data = df[features + [target_var]].dropna()
-                        
-                        if len(ml_data) < 10:
-                            st.error("Not enough valid data points remaining after removing missing values.")
+                    if st.button("Run Model Bake-off"):
+                        if not selected_model_names:
+                            st.error("Please select at least one model to train.")
                         else:
-                            X = ml_data[features]
-                            y = ml_data[target_var]
+                            ml_data = df[features + [target_var]].dropna()
                             
-                            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
-                            
-                            # Initialize correct model
-                            if model_type == "Linear Regression":
-                                model = LinearRegression()
-                            elif model_type == "Random Forest Regressor":
-                                model = RandomForestRegressor(random_state=42)
-                            elif model_type == "Logistic Regression":
-                                model = LogisticRegression(max_iter=1000)
-                            elif model_type == "Random Forest Classifier":
-                                model = RandomForestClassifier(random_state=42)
+                            if len(ml_data) < 10:
+                                st.error("Not enough valid data points remaining after removing missing values.")
+                            else:
+                                X = ml_data[features]
+                                y = ml_data[target_var]
                                 
-                            with st.spinner(f"Training {model_type}..."):
-                                model.fit(X_train, y_train)
-                                predictions = model.predict(X_test)
+                                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
                                 
-                                st.success(f"{model_type} trained successfully on {len(X_train)} rows!")
-                                st.subheader("Model Performance")
+                                results = []
                                 
-                                # Evaluate based on task type
+                                # Loop through and train every selected model
+                                with st.spinner("Training models and comparing results..."):
+                                    for name in selected_model_names:
+                                        model = available_models[name]
+                                        model.fit(X_train, y_train)
+                                        preds = model.predict(X_test)
+                                        
+                                        if is_regression:
+                                            r2 = r2_score(y_test, preds)
+                                            mse = mean_squared_error(y_test, preds)
+                                            results.append({"Model": name, "R² Score": r2, "MSE": mse})
+                                        else:
+                                            acc = accuracy_score(y_test, preds)
+                                            results.append({"Model": name, "Accuracy": acc})
+                                
+                                st.success("Bake-off complete!")
+                                
+                                # Display Results Leaderboard
+                                st.subheader("🏆 Model Leaderboard")
+                                results_df = pd.DataFrame(results)
+                                
                                 if is_regression:
-                                    mse = mean_squared_error(y_test, predictions)
-                                    r2 = r2_score(y_test, predictions)
+                                    results_df = results_df.sort_values(by="R² Score", ascending=False)
+                                    st.dataframe(results_df.style.highlight_max(subset=['R² Score'], color='lightgreen'))
                                     
-                                    m_col1, m_col2 = st.columns(2)
-                                    m_col1.metric("R² Score (Closer to 1 is better)", round(r2, 4))
-                                    m_col2.metric("Mean Squared Error (MSE)", round(mse, 4))
-                                    
-                                    res_df = pd.DataFrame({"Actual": y_test, "Predicted": predictions})
-                                    fig_ml = px.scatter(res_df, x="Actual", y="Predicted", title="Actual vs Predicted Values", template="plotly_white")
-                                    
-                                    min_val, max_val = min(res_df.min()), max(res_df.max())
-                                    fig_ml.add_shape(type="line", x0=min_val, y0=min_val, x1=max_val, y1=max_val, line=dict(color="red", dash="dash"))
-                                    st.plotly_chart(fig_ml, use_container_width=True)
-                                    
+                                    # Plot Comparison
+                                    fig_comp = px.bar(results_df, x="Model", y="R² Score", color="Model", title="Model Comparison (R² Score - Higher is Better)")
+                                    st.plotly_chart(fig_comp, use_container_width=True)
                                 else:
-                                    # Classification Evaluation
-                                    acc = accuracy_score(y_test, predictions)
-                                    st.metric("Accuracy Score", f"{round(acc * 100, 2)}%")
+                                    results_df = results_df.sort_values(by="Accuracy", ascending=False)
+                                    st.dataframe(results_df.style.highlight_max(subset=['Accuracy'], color='lightgreen'))
                                     
-                                    # Confusion Matrix Visualization
-                                    cm = confusion_matrix(y_test, predictions)
-                                    labels = sorted(y_test.unique())
-                                    
-                                    fig_cm = px.imshow(cm, text_auto=True, color_continuous_scale='Blues',
-                                                       x=[str(l) for l in labels], y=[str(l) for l in labels],
-                                                       labels=dict(x="Predicted Label", y="True Label"),
-                                                       title="Confusion Matrix")
-                                    st.plotly_chart(fig_cm, use_container_width=True)
+                                    # Plot Comparison
+                                    fig_comp = px.bar(results_df, x="Model", y="Accuracy", color="Model", title="Model Comparison (Accuracy - Higher is Better)")
+                                    st.plotly_chart(fig_comp, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
