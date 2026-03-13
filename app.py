@@ -1,102 +1,80 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import seaborn as sns
-import matplotlib.pyplot as plt
 
-# Set page config
+# Page configuration
 st.set_page_config(page_title="Universal EDA Tool", layout="wide")
 
-st.title("📊 Universal Exploratory Data Analysis Tool")
-st.markdown("""
-Upload any CSV dataset to perform an instant exploratory analysis. 
-If no file is uploaded, the **Gapminder** dataset will be used by default.
-""")
+st.title("📊 Universal Exploratory Data Analysis")
+st.markdown("Upload any CSV or Excel file to begin your analysis.")
 
-# --- 1. File Upload Logic ---
-uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
+# 1. File Uploader
+uploaded_file = st.file_uploader("Choose a file", type=['csv', 'xlsx'])
 
-@st.cache_data
-def load_data(file):
-    if file is not None:
-        return pd.read_csv(file)
-    else:
-        # Default to Gapminder if no file is uploaded
-        return pd.read_csv('Gapminder.csv')
+if uploaded_file is not None:
+    # Load data
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+        
+        st.success("File uploaded successfully!")
+        
+        # --- Sidebar Navigation ---
+        st.sidebar.header("Settings")
+        show_raw_data = st.sidebar.checkbox("Show Raw Data", False)
+        
+        # 2. Data Overview
+        st.header("🔍 Data Overview")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Rows", df.shape[0])
+        col2.metric("Columns", df.shape[1])
+        col3.metric("Duplicate Rows", df.duplicated().sum())
 
-df = load_data(uploaded_file)
+        if show_raw_data:
+            st.subheader("Raw Dataframe")
+            st.dataframe(df.head(100))
 
-# --- 2. Data Overview Section ---
-st.header("🔍 Data Overview")
-col1, col2, col3 = st.columns(3)
-col1.metric("Rows", df.shape[0])
-col2.metric("Columns", df.shape[1])
-col3.metric("Missing Values", df.isna().sum().sum())
+        # 3. Statistical Summary
+        st.header("📈 Statistical Summary")
+        st.write(df.describe(include='all').fillna(''))
 
-if st.checkbox("Show Raw Data"):
-    st.dataframe(df.head(50))
+        # 4. Interactive Visualizations
+        st.header("🎨 Interactive Visuals")
+        
+        columns = df.columns.tolist()
+        
+        viz_col1, viz_col2 = st.columns([1, 2])
+        
+        with viz_col1:
+            chart_type = st.selectbox("Select Chart Type", ["Scatter", "Bar", "Histogram", "Boxplot"])
+            x_axis = st.selectbox("Select X-axis", columns)
+            y_axis = st.selectbox("Select Y-axis", columns)
+            color_by = st.selectbox("Color by (Optional)", [None] + columns)
 
-# --- 3. Statistics Section ---
-st.header("📈 Summary Statistics")
-st.write(df.describe())
+        with viz_col2:
+            if chart_type == "Scatter":
+                fig = px.scatter(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+            elif chart_type == "Bar":
+                fig = px.bar(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+            elif chart_type == "Histogram":
+                fig = px.histogram(df, x=x_axis, color=color_by, template="plotly_white")
+            elif chart_type == "Boxplot":
+                fig = px.box(df, x=x_axis, y=y_axis, color=color_by, template="plotly_white")
+            
+            st.plotly_chart(fig, use_container_width=True)
 
-# --- 4. Interactive Visualizations ---
-st.header("🎨 Interactive Visualizations")
+        # 5. Missing Values Analysis
+        st.header("Missing Values")
+        null_counts = df.isnull().sum()
+        if null_counts.sum() > 0:
+            st.warning(f"Found {null_counts.sum()} missing values.")
+            st.bar_chart(null_counts[null_counts > 0])
+        else:
+            st.info("No missing values detected!")
 
-viz_type = st.selectbox("Select Chart Type", 
-                        ["Scatter Plot", "Line Chart", "Bar Chart", "Box Plot", "Histogram", "Correlation Heatmap"])
-
-# Get numerical and categorical columns for selectors
-numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-all_cols = df.columns.tolist()
-
-if viz_type == "Scatter Plot":
-    col_x = st.selectbox("X Axis", numeric_cols)
-    col_y = st.selectbox("Y Axis", numeric_cols)
-    color_col = st.selectbox("Color By (Optional)", [None] + categorical_cols)
-    fig = px.scatter(df, x=col_x, y=col_y, color=color_col, title=f"{col_y} vs {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Line Chart":
-    col_x = st.selectbox("X Axis (Usually Time)", all_cols)
-    col_y = st.selectbox("Y Axis", numeric_cols)
-    group_col = st.selectbox("Group By", [None] + categorical_cols)
-    fig = px.line(df, x=col_x, y=col_y, color=group_col, title=f"{col_y} over {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Bar Chart":
-    col_x = st.selectbox("X Axis (Category)", categorical_cols)
-    col_y = st.selectbox("Y Axis (Value)", numeric_cols)
-    fig = px.bar(df, x=col_x, y=col_y, title=f"{col_y} by {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Box Plot":
-    col_x = st.selectbox("Category", categorical_cols)
-    col_y = st.selectbox("Numerical Value", numeric_cols)
-    fig = px.box(df, x=col_x, y=col_y, title=f"Distribution of {col_y} by {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Histogram":
-    col_x = st.selectbox("Select Column", numeric_cols)
-    fig = px.histogram(df, x=col_x, nbins=30, title=f"Frequency Distribution of {col_x}")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif viz_type == "Correlation Heatmap":
-    if len(numeric_cols) > 1:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-        st.pyplot(fig)
-    else:
-        st.warning("Not enough numerical columns for a correlation heatmap.")
-
-# --- 5. Data Filtering ---
-st.sidebar.header("Filter Data")
-if categorical_cols:
-    filter_col = st.sidebar.selectbox("Filter by Category", categorical_cols)
-    unique_vals = df[filter_col].unique().tolist()
-    selected_vals = st.sidebar.multiselect(f"Select {filter_col}", unique_vals, default=unique_vals[:2])
-    
-    filtered_df = df[df[filter_col].isin(selected_vals)]
-    st.subheader(f"Filtered Data (by {filter_col})")
-    st.write(filtered_df)
+    except Exception as e:
+        st.error(f"Error: {e}")
+else:
+    st.info("Waiting for a dataset to be uploaded...")
