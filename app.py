@@ -1,10 +1,13 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from textblob import TextBlob
 from collections import Counter
 import re
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 # Regression imports
 from sklearn.linear_model import LinearRegression
@@ -18,7 +21,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 
 # Page configuration
 st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
@@ -149,7 +152,7 @@ if uploaded_file is not None:
                     "Logistic Regression": LogisticRegression(max_iter=1000),
                     "Random Forest": RandomForestClassifier(random_state=42),
                     "Gradient Boosting": GradientBoostingClassifier(random_state=42),
-                    "Support Vector Machine (SVC)": SVC(),
+                    "Support Vector Machine (SVC)": SVC(probability=True), # Added probability=True for ROC Curve
                     "K-Nearest Neighbors": KNeighborsClassifier()
                 }
 
@@ -185,17 +188,27 @@ if uploaded_file is not None:
                                 st.error("Not enough valid data points remaining after removing missing values.")
                             else:
                                 X = ml_data[features]
-                                y = ml_data[target_var]
+                                
+                                # Encode target variable for classification to ensure metrics work smoothly
+                                if not is_regression:
+                                    le = LabelEncoder()
+                                    y = le.fit_transform(ml_data[target_var])
+                                    is_binary = len(np.unique(y)) == 2
+                                else:
+                                    y = ml_data[target_var]
+                                    is_binary = False
                                 
                                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
                                 
                                 results = []
+                                trained_models = {} # Dictionary to store trained models for later use
                                 
                                 with st.spinner("Training models and calculating advanced metrics..."):
                                     for name in selected_model_names:
                                         model = available_models[name]
                                         model.fit(X_train, y_train)
                                         preds = model.predict(X_test)
+                                        trained_models[name] = model
                                         
                                         if is_regression:
                                             r2 = r2_score(y_test, preds)
@@ -203,7 +216,6 @@ if uploaded_file is not None:
                                             mae = mean_absolute_error(y_test, preds)
                                             results.append({"Model": name, "R² Score": r2, "MSE": mse, "MAE": mae})
                                         else:
-                                            # Using average='weighted' safely handles both binary and multi-class target variables
                                             acc = accuracy_score(y_test, preds)
                                             prec = precision_score(y_test, preds, average='weighted', zero_division=0)
                                             rec = recall_score(y_test, preds, average='weighted', zero_division=0)
@@ -220,21 +232,41 @@ if uploaded_file is not None:
                                     results_df = results_df.sort_values(by="R² Score", ascending=False)
                                     st.dataframe(results_df.style.highlight_max(subset=['R² Score'], color='lightgreen'))
                                     
-                                    # Plot Comparison using a grouped bar chart
                                     df_melted = results_df.melt(id_vars="Model", value_vars=["R² Score"], var_name="Metric", value_name="Score")
                                     fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="R² Score Comparison (Higher is Better)")
                                     st.plotly_chart(fig_comp, use_container_width=True)
                                 else:
                                     results_df = results_df.sort_values(by="F1-Score", ascending=False)
-                                    # Highlight the max values across the primary metrics
                                     st.dataframe(results_df.style.highlight_max(subset=['Accuracy', 'Precision', 'Recall', 'F1-Score'], color='lightgreen'))
                                     
-                                    # Plot Comparison using a grouped bar chart for all 4 metrics
                                     df_melted = results_df.melt(id_vars="Model", value_vars=["Accuracy", "Precision", "Recall", "F1-Score"], var_name="Metric", value_name="Score")
                                     fig_comp = px.bar(df_melted, x="Model", y="Score", color="Metric", barmode="group", title="Comprehensive Metric Comparison (Higher is Better)")
                                     st.plotly_chart(fig_comp, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
-else:
-    st.info("Waiting for a dataset to be uploaded...")
+                                
+                                # ==========================================
+                                # DEEP DIVE: ROC-AUC & FEATURE IMPORTANCE
+                                # ==========================================
+                                st.markdown("---")
+                                st.header("🔬 Deep Dive: Model Diagnostics")
+                                
+                                col_diag1, col_diag2 = st.columns(2)
+                                
+                                with col_diag1:
+                                    st.subheader("Feature Importance")
+                                    model_to_explain = st.selectbox("Select a model to view feature importance:", selected_model_names)
+                                    selected_model = trained_models[model_to_explain]
+                                    
+                                    importances = None
+                                    if hasattr(selected_model, 'feature_importances_'):
+                                        importances = selected_model.feature_importances_
+                                    elif hasattr(selected_model, 'coef_'):
+                                        # Handle multi-class logistic regression vs binary/regression
+                                        if len(selected_model.coef_.shape) > 1 and selected_model.coef_.shape[0] > 1:
+                                            importances = np.mean(np.abs(selected_model.coef_), axis=0)
+                                        else:
+                                            importances = np.abs(selected_model.coef_[0]) if len(selected_model.coef_.shape) > 1 else np.abs(selected_model.coef_)
+                                            
+                                    if importances is not None:
+                                        fi_df = pd.DataFrame({'Feature': features, 'Importance': importances})
+                                        fi_df = fi_df.sort_values(by='Importance', ascending=True)
+                                        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h',
