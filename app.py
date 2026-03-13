@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 from textblob import TextBlob
 from collections import Counter
 import re
+import pickle # <--- ADD THIS HERE
+# ... rest of your imports
+
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
@@ -352,8 +355,51 @@ if uploaded_file is not None:
                                 st.info("ROC-AUC curve is currently only generated for binary (2-class) classification tasks in this app.")
                             else:
                                 st.info("ROC-AUC is not applicable for Regression tasks.")
-
+    
     except Exception as e:
         st.error(f"Error processing file: {e}")
 else:
     st.info("Waiting for a dataset to be uploaded...")
+# ==========================================
+                        # EXPORT / DOWNLOAD MODEL
+                        # ==========================================
+                        st.markdown("---")
+                        st.header("💾 Export Trained Model")
+                        st.markdown("Download your favorite model as a `.pkl` file so you can use it in your own Python scripts or production environments.")
+                        
+                        col_export1, col_export2 = st.columns([1, 2])
+                        
+                        with col_export1:
+                            model_to_download = st.selectbox(
+                                "Select a model to export:", 
+                                st.session_state.selected_model_names_run,
+                                key="export_select"
+                            )
+                            
+                            # Grab the actual trained model object from memory
+                            model_obj = st.session_state.trained_models[model_to_download]
+                            
+                            # Convert the model to a downloadable byte stream
+                            model_bytes = pickle.dumps(model_obj)
+                            
+                            # Create a safe file name (e.g., "Random Forest" -> "random_forest_model.pkl")
+                            safe_filename = f"{model_to_download.replace(' ', '_').lower()}_model.pkl"
+                            
+                            st.download_button(
+                                label=f"⬇️ Download {model_to_download}",
+                                data=model_bytes,
+                                file_name=safe_filename,
+                                mime="application/octet-stream"
+                            )
+                            
+                        with col_export2:
+                            st.info(f"**How to use your downloaded model:**\n\n"
+                                    f"```python\n"
+                                    f"import pickle\n"
+                                    f"import pandas as pd\n\n"
+                                    f"# 1. Load the model\n"
+                                    f"with open('{safe_filename}', 'rb') as f:\n"
+                                    f"    model = pickle.load(f)\n\n"
+                                    f"# 2. Make predictions on new data\n"
+                                    f"predictions = model.predict(new_data)\n"
+                                    f"```")
