@@ -31,6 +31,22 @@ st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
 st.title("📊 Universal EDA & Machine Learning App")
 st.markdown("Upload any CSV or Excel file to begin your analysis and train models.")
 
+# ==========================================
+# ABOUT SECTION
+# ==========================================
+with st.expander("ℹ️ About this App"):
+    st.markdown("""
+    **Welcome to the Universal EDA & ML Tool!** This application is an end-to-end data science playground that allows you to explore datasets and build predictive models without writing any code.
+    
+    **Core Features:**
+    - 📊 **General EDA:** View automated statistical summaries, check for missing values, and build interactive visualizations.
+    - 📝 **Text & Sentiment Analysis:** Analyze text columns for polarity (positive/negative), subjectivity, and word frequency.
+    - 🏆 **Machine Learning Bake-off:** Train and compare multiple algorithms (both Regression and Classification) with a single click.
+    - ⚙️ **Advanced Tuning:** Manually fine-tune hyperparameters for models like Random Forest, SVM, and Logistic Regression.
+    - 🔬 **Model Diagnostics:** Inspect Feature Importance and evaluate performance using interactive ROC-AUC curves.
+    - 💾 **Export:** Automatically identify and download your best-performing model as a `.pkl` file for local use or production!
+    """)
+
 # Initialize session state for ML results to prevent unwanted refreshes
 if 'ml_run' not in st.session_state:
     st.session_state.ml_run = False
