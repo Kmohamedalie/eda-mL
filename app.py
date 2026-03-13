@@ -5,9 +5,16 @@ from textblob import TextBlob
 from collections import Counter
 import re
 from sklearn.model_selection import train_test_split
+
+# Regression imports
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
+
+# Classification imports (NEW)
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix
 
 # Page configuration
 st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
@@ -19,7 +26,6 @@ st.markdown("Upload any CSV or Excel file to begin your analysis and train model
 uploaded_file = st.file_uploader("Choose a file", type=['csv', 'xlsx'])
 
 if uploaded_file is not None:
-    # Load data
     try:
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
@@ -28,11 +34,9 @@ if uploaded_file is not None:
         
         st.success("File uploaded successfully!")
         
-        # --- Sidebar Navigation ---
         st.sidebar.header("Settings")
         show_raw_data = st.sidebar.checkbox("Show Raw Data", False)
         
-        # Create Tabs for cleaner UI
         tab_general, tab_text, tab_ml = st.tabs(["📊 General EDA", "📝 Text & Sentiment", "🤖 Machine Learning"])
         
         # ==========================================
@@ -87,7 +91,6 @@ if uploaded_file is not None:
         # ==========================================
         with tab_text:
             st.header("📝 Text Analysis & Sentiment")
-            
             text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
             
             if not text_cols:
@@ -101,19 +104,12 @@ if uploaded_file is not None:
                             lambda x: pd.Series([TextBlob(x).sentiment.polarity, TextBlob(x).sentiment.subjectivity])
                         )
                         
-                        st.subheader("Sentiment Distribution")
                         col_sent1, col_sent2 = st.columns(2)
-                        
                         with col_sent1:
-                            fig_pol = px.histogram(df, x='Polarity', nbins=20, 
-                                                   title="Polarity (-1 Negative to 1 Positive)",
-                                                   color_discrete_sequence=['#2ecc71'])
+                            fig_pol = px.histogram(df, x='Polarity', nbins=20, title="Polarity (-1 Neg to 1 Pos)")
                             st.plotly_chart(fig_pol, use_container_width=True)
-                            
                         with col_sent2:
-                            fig_sub = px.histogram(df, x='Subjectivity', nbins=20, 
-                                                   title="Subjectivity (0 Objective to 1 Subjective)",
-                                                   color_discrete_sequence=['#3498db'])
+                            fig_sub = px.histogram(df, x='Subjectivity', nbins=20, title="Subjectivity (0 Obj to 1 Sub)")
                             st.plotly_chart(fig_sub, use_container_width=True)
                         
                         st.subheader("Most Frequent Words")
@@ -122,33 +118,38 @@ if uploaded_file is not None:
                         
                         word_counts = Counter(words).most_common(20)
                         freq_df = pd.DataFrame(word_counts, columns=['Word', 'Frequency'])
-                        
-                        fig_words = px.bar(freq_df, x='Word', y='Frequency', 
-                                           title="Top 20 Most Common Words (4+ characters)",
-                                           template="plotly_white")
+                        fig_words = px.bar(freq_df, x='Word', y='Frequency', title="Top 20 Most Common Words (4+ chars)")
                         st.plotly_chart(fig_words, use_container_width=True)
 
         # ==========================================
-        # TAB 3: MACHINE LEARNING (NEW)
+        # TAB 3: MACHINE LEARNING (UPDATED)
         # ==========================================
         with tab_ml:
             st.header("🤖 Machine Learning Model Training")
-            st.markdown("Train a basic regression model directly from your dataset.")
             
-            # Auto-detect numeric columns only (to prevent string conversion errors)
+            # 1. Choose Task Type
+            task_type = st.radio("Select ML Task Type", ["Regression (Predict a Number)", "Classification (Predict a Category)"], horizontal=True)
+            is_regression = "Regression" in task_type
+            
+            # 2. Filter target columns based on task
+            if is_regression:
+                target_options = df.select_dtypes(include=['number']).columns.tolist()
+            else:
+                # Classification targets can be text or numbers
+                target_options = df.columns.tolist() 
+
             numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
             
-            if len(numeric_cols) < 2:
-                st.warning("You need at least two numeric columns in your dataset to train a model.")
+            if len(numeric_cols) < 1:
+                st.warning("You need at least one numeric column to act as a feature.")
             else:
                 col_x, col_y = st.columns(2)
                 
                 with col_y:
-                    target_var = st.selectbox("Select Target Variable (Y - What you want to predict)", numeric_cols)
+                    target_var = st.selectbox("Select Target Variable (Y - What you want to predict)", target_options)
                 with col_x:
-                    # Exclude the target variable from default feature selection
                     feature_options = [c for c in numeric_cols if c != target_var]
-                    features = st.multiselect("Select Feature Variables (X - What you will use to predict)", feature_options, default=feature_options)
+                    features = st.multiselect("Select Feature Variables (X - Numeric only)", feature_options, default=feature_options)
                 
                 if not features:
                     st.warning("Please select at least one feature variable.")
@@ -157,10 +158,12 @@ if uploaded_file is not None:
                     with col_settings:
                         test_size = st.slider("Test Set Size (%)", 10, 50, 20) / 100
                     with col_model:
-                        model_type = st.selectbox("Select Model Algorithm", ["Linear Regression", "Random Forest Regressor"])
+                        if is_regression:
+                            model_type = st.selectbox("Select Algorithm", ["Linear Regression", "Random Forest Regressor"])
+                        else:
+                            model_type = st.selectbox("Select Algorithm", ["Logistic Regression", "Random Forest Classifier"])
                         
                     if st.button("Train Model"):
-                        # Data Prep: drop rows with missing values in the selected columns
                         ml_data = df[features + [target_var]].dropna()
                         
                         if len(ml_data) < 10:
@@ -169,43 +172,55 @@ if uploaded_file is not None:
                             X = ml_data[features]
                             y = ml_data[target_var]
                             
-                            # Split Data
                             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
                             
-                            # Initialize Model
+                            # Initialize correct model
                             if model_type == "Linear Regression":
                                 model = LinearRegression()
-                            else:
+                            elif model_type == "Random Forest Regressor":
                                 model = RandomForestRegressor(random_state=42)
+                            elif model_type == "Logistic Regression":
+                                model = LogisticRegression(max_iter=1000)
+                            elif model_type == "Random Forest Classifier":
+                                model = RandomForestClassifier(random_state=42)
                                 
                             with st.spinner(f"Training {model_type}..."):
                                 model.fit(X_train, y_train)
                                 predictions = model.predict(X_test)
                                 
-                                # Calculate Metrics
-                                mse = mean_squared_error(y_test, predictions)
-                                r2 = r2_score(y_test, predictions)
-                                
                                 st.success(f"{model_type} trained successfully on {len(X_train)} rows!")
-                                
                                 st.subheader("Model Performance")
-                                m_col1, m_col2 = st.columns(2)
-                                m_col1.metric("R² Score (Closer to 1 is better)", round(r2, 4))
-                                m_col2.metric("Mean Squared Error (MSE)", round(mse, 4))
                                 
-                                # Plot Actual vs Predicted
-                                res_df = pd.DataFrame({"Actual": y_test, "Predicted": predictions})
-                                fig_ml = px.scatter(res_df, x="Actual", y="Predicted", 
-                                                    title="Actual vs Predicted Values", 
-                                                    template="plotly_white")
-                                
-                                # Add ideal prediction trend line
-                                min_val = min(res_df.min())
-                                max_val = max(res_df.max())
-                                fig_ml.add_shape(type="line", x0=min_val, y0=min_val, x1=max_val, y1=max_val, 
-                                                 line=dict(color="red", dash="dash"))
-                                
-                                st.plotly_chart(fig_ml, use_container_width=True)
+                                # Evaluate based on task type
+                                if is_regression:
+                                    mse = mean_squared_error(y_test, predictions)
+                                    r2 = r2_score(y_test, predictions)
+                                    
+                                    m_col1, m_col2 = st.columns(2)
+                                    m_col1.metric("R² Score (Closer to 1 is better)", round(r2, 4))
+                                    m_col2.metric("Mean Squared Error (MSE)", round(mse, 4))
+                                    
+                                    res_df = pd.DataFrame({"Actual": y_test, "Predicted": predictions})
+                                    fig_ml = px.scatter(res_df, x="Actual", y="Predicted", title="Actual vs Predicted Values", template="plotly_white")
+                                    
+                                    min_val, max_val = min(res_df.min()), max(res_df.max())
+                                    fig_ml.add_shape(type="line", x0=min_val, y0=min_val, x1=max_val, y1=max_val, line=dict(color="red", dash="dash"))
+                                    st.plotly_chart(fig_ml, use_container_width=True)
+                                    
+                                else:
+                                    # Classification Evaluation
+                                    acc = accuracy_score(y_test, predictions)
+                                    st.metric("Accuracy Score", f"{round(acc * 100, 2)}%")
+                                    
+                                    # Confusion Matrix Visualization
+                                    cm = confusion_matrix(y_test, predictions)
+                                    labels = sorted(y_test.unique())
+                                    
+                                    fig_cm = px.imshow(cm, text_auto=True, color_continuous_scale='Blues',
+                                                       x=[str(l) for l in labels], y=[str(l) for l in labels],
+                                                       labels=dict(x="Predicted Label", y="True Label"),
+                                                       title="Confusion Matrix")
+                                    st.plotly_chart(fig_cm, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
