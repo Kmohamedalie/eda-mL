@@ -29,7 +29,7 @@ st.set_page_config(page_title="Universal EDA & ML Tool", layout="wide")
 st.title("📊 Universal EDA & Machine Learning App")
 st.markdown("Upload any CSV or Excel file to begin your analysis and train models.")
 
-# Initialize session state for ML results
+# Initialize session state for ML results to prevent unwanted refreshes
 if 'ml_run' not in st.session_state:
     st.session_state.ml_run = False
 
@@ -123,7 +123,7 @@ if uploaded_file is not None:
                         st.plotly_chart(fig_words, use_container_width=True)
 
         # ==========================================
-        # TAB 3: MODEL COMPARISON (SESSION STATE ADDED)
+        # TAB 3: MODEL COMPARISON & TUNING
         # ==========================================
         with tab_ml:
             st.header("🏆 Machine Learning Bake-off")
@@ -172,7 +172,53 @@ if uploaded_file is not None:
                     with col_models:
                         selected_model_names = st.multiselect("Select Models to Compare", list(available_models.keys()), default=list(available_models.keys())[:2])
                         
-                    # 1. BUTTON CLICK: ONLY TRAIN AND SAVE TO MEMORY
+                    # ==========================================
+                    # INTERACTIVE HYPERPARAMETER TUNING
+                    # ==========================================
+                    with st.expander("⚙️ Advanced Model Tuning"):
+                        st.markdown("Fine-tune the parameters for your selected models. (Leave as is to use standard defaults)")
+                        
+                        col_tune1, col_tune2 = st.columns(2)
+                        
+                        with col_tune1:
+                            if "Random Forest" in selected_model_names:
+                                st.markdown("**🌲 Random Forest**")
+                                rf_n_estimators = st.slider("Number of Trees", min_value=10, max_value=500, value=100, step=10)
+                                rf_max_depth = st.slider("Max Depth", min_value=2, max_value=50, value=15)
+                                
+                                if is_regression:
+                                    available_models["Random Forest"] = RandomForestRegressor(n_estimators=rf_n_estimators, max_depth=rf_max_depth, random_state=42)
+                                else:
+                                    available_models["Random Forest"] = RandomForestClassifier(n_estimators=rf_n_estimators, max_depth=rf_max_depth, random_state=42)
+
+                            if "Logistic Regression" in selected_model_names and not is_regression:
+                                st.markdown("**📈 Logistic Regression**")
+                                lr_c = st.select_slider("Inverse of Reg. Strength (C)", options=[0.01, 0.1, 1.0, 10.0, 100.0], value=1.0)
+                                available_models["Logistic Regression"] = LogisticRegression(C=lr_c, max_iter=1000)
+
+                        with col_tune2:
+                            if "K-Nearest Neighbors" in selected_model_names:
+                                st.markdown("**📍 K-Nearest Neighbors**")
+                                knn_neighbors = st.slider("Number of Neighbors (K)", min_value=1, max_value=20, value=5)
+                                
+                                if is_regression:
+                                    available_models["K-Nearest Neighbors"] = KNeighborsRegressor(n_neighbors=knn_neighbors)
+                                else:
+                                    available_models["K-Nearest Neighbors"] = KNeighborsClassifier(n_neighbors=knn_neighbors)
+                                    
+                            if "Support Vector Machine (SVC)" in selected_model_names or "Support Vector Machine (SVR)" in selected_model_names:
+                                st.markdown("**🛣️ Support Vector Machine**")
+                                svm_c = st.select_slider("Regularization (C)", options=[0.1, 1.0, 10.0, 100.0], value=1.0)
+                                svm_kernel = st.selectbox("Kernel", ["rbf", "linear", "poly"])
+                                
+                                if is_regression:
+                                    available_models["Support Vector Machine (SVR)"] = SVR(C=svm_c, kernel=svm_kernel)
+                                else:
+                                    available_models["Support Vector Machine (SVC)"] = SVC(C=svm_c, kernel=svm_kernel, probability=True)
+
+                    # ==========================================
+                    # MODEL TRAINING & SESSION STATE STORAGE
+                    # ==========================================
                     if st.button("Run Model Bake-off"):
                         if not selected_model_names:
                             st.error("Please select at least one model to train.")
@@ -216,7 +262,7 @@ if uploaded_file is not None:
                                             f1 = f1_score(y_test, preds, average='weighted', zero_division=0)
                                             results.append({"Model": name, "Accuracy": acc, "Precision": prec, "Recall": rec, "F1-Score": f1})
                                 
-                                # Save everything to session state
+                                # Save to memory
                                 st.session_state.results = results
                                 st.session_state.trained_models = trained_models
                                 st.session_state.X_test = X_test
@@ -225,9 +271,11 @@ if uploaded_file is not None:
                                 st.session_state.is_regression_run = is_regression
                                 st.session_state.is_binary_run = is_binary
                                 st.session_state.selected_model_names_run = selected_model_names
-                                st.session_state.ml_run = True # Flag that training is complete
+                                st.session_state.ml_run = True 
 
-                    # 2. DISPLAY LOGIC: READ FROM MEMORY
+                    # ==========================================
+                    # RENDER RESULTS FROM SESSION STATE
+                    # ==========================================
                     if st.session_state.ml_run:
                         st.success("Bake-off complete!")
                         
@@ -256,7 +304,6 @@ if uploaded_file is not None:
                         
                         with col_diag1:
                             st.subheader("Feature Importance")
-                            # Interacting with this dropdown now works perfectly because we render from st.session_state!
                             model_to_explain = st.selectbox("Select a model to view feature importance:", st.session_state.selected_model_names_run)
                             selected_model = st.session_state.trained_models[model_to_explain]
                             
