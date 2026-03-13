@@ -6,8 +6,6 @@ import plotly.graph_objects as go
 from textblob import TextBlob
 from collections import Counter
 import re
-import pickle 
-
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
@@ -236,7 +234,6 @@ if uploaded_file is not None:
                                     le = LabelEncoder()
                                     y = le.fit_transform(ml_data[target_var])
                                     is_binary = len(np.unique(y)) == 2
-                                    st.session_state.label_encoder = le # Save encoder to decode future predictions
                                 else:
                                     y = ml_data[target_var]
                                     is_binary = False
@@ -271,7 +268,6 @@ if uploaded_file is not None:
                                 st.session_state.X_test = X_test
                                 st.session_state.y_test = y_test
                                 st.session_state.features = features
-                                st.session_state.target_var = target_var # Save target name
                                 st.session_state.is_regression_run = is_regression
                                 st.session_state.is_binary_run = is_binary
                                 st.session_state.selected_model_names_run = selected_model_names
@@ -357,30 +353,7 @@ if uploaded_file is not None:
                             else:
                                 st.info("ROC-AUC is not applicable for Regression tasks.")
 
-                        # ==========================================
-                        # EXPORT / DOWNLOAD MODEL
-                        # ==========================================
-                        st.markdown("---")
-                        st.header("💾 Export Trained Model")
-                        st.markdown("Download your favorite model as a `.pkl` file so you can use it in your own Python scripts.")
-                        
-                        col_export1, col_export2 = st.columns([1, 2])
-                        
-                        with col_export1:
-                            model_to_download = st.selectbox("Select a model to export:", st.session_state.selected_model_names_run, key="export_select")
-                            model_obj = st.session_state.trained_models[model_to_download]
-                            model_bytes = pickle.dumps(model_obj)
-                            safe_filename = f"{model_to_download.replace(' ', '_').lower()}_model.pkl"
-                            
-                            st.download_button(
-                                label=f"⬇️ Download {model_to_download}",
-                                data=model_bytes,
-                                file_name=safe_filename,
-                                mime="application/octet-stream"
-                            )
-                            
-                        with col_export2:
-                            st.info(f"**How to use it locally:**\n\n
-http://googleusercontent.com/immersive_entry_chip/0
-
-Would you like some tips on how to add "Caching" to your file uploader so that analyzing massive (500MB+) datasets won't slow down the app when you switch tabs?
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
+else:
+    st.info("Waiting for a dataset to be uploaded...")
